@@ -1,0 +1,21 @@
+name = "sydney-bot"
+main = "src/index.js"
+compatibility_date = "2026-11-24"
+
+[[durable_objects.bindings]]
+name = "SESSIONS"
+class_name = "SessionCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SessionCoordinator"]
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+enabled = true
