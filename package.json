@@ -1,0 +1,6 @@
+{
+  "name": "sydney-bot",
+  "private": true,
+  "type": "module",
+  "scripts": { "register": "node scripts/register-commands.mjs" }
+}
