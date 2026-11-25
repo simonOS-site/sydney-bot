@@ -77,8 +77,7 @@ function modalFields(interaction) {
 async function command(interaction, env) {
   const name = interaction.data.name, o = opts(interaction), guild = interaction.guild_id;
   if (!guild) return ephemeral("Use this command inside the server.");
-  const cfg = guildConfig(guild, env);
-  if (!cfg) return ephemeral("Sydney Bot is not enabled in this server.");
+  const cfg = guildConfig(guild, env) || {};
   if (!isAdministrator(interaction)) return ephemeral("Only server administrators can use Sydney Bot commands.");
 
   if (name === "promote") return {
@@ -149,8 +148,7 @@ async function command(interaction, env) {
 
 async function modal(interaction, env) {
   if (interaction.data.custom_id !== "promotion_modal") return ephemeral("Unknown form.");
-  const guild = interaction.guild_id, cfg = guildConfig(guild, env);
-  if (!cfg) return ephemeral("Sydney Bot is not enabled in this server.");
+  const guild = interaction.guild_id, cfg = guildConfig(guild, env) || {};
   if (!isAdministrator(interaction)) return ephemeral("Only server administrators can publish promotions.");
   const channel = interaction.channel_id;
   if (!channel) return ephemeral("Could not determine the channel where the command was run.");
@@ -182,8 +180,8 @@ async function joinRelay(request, env) {
   for (let i = 0; i < digestA.length; i++) difference |= digestA[i] ^ digestB[i];
   if (difference !== 0) return reply({ error: "Unauthorized" }, 401);
   const p = await request.json();
-  const cfg = guildConfig(p.guild_id, env);
-  if (!cfg || !p.user_id) return reply({ error: "Invalid join event." }, 400);
+  const cfg = guildConfig(p.guild_id, env) || {};
+  if (!p.user_id) return reply({ error: "Invalid join event." }, 400);
   const server = await discord(env, "/guilds/" + p.guild_id);
   const welcomeChannel = server.system_channel_id;
   if (!welcomeChannel) return reply({ error: "This server has no system channel configured." }, 409);
