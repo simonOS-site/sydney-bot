@@ -6,16 +6,13 @@ function hexBytes(hex) {
   if (!/^[0-9a-f]{128}$/i.test(hex || "")) throw new Error("Invalid public key");
   return Uint8Array.from(hex.match(/.{2}/g), x => parseInt(x, 16));
 }
-function base64Bytes(value) {
-  const raw = atob(value); return Uint8Array.from(raw, c => c.charCodeAt(0));
-}
 async function verify(request, body, publicKey) {
   try {
     const sig = request.headers.get("x-signature-ed25519");
     const timestamp = request.headers.get("x-signature-timestamp");
     if (!sig || !timestamp || !publicKey) return false;
     const key = await crypto.subtle.importKey("raw", hexBytes(publicKey), { name: "Ed25519" }, false, ["verify"]);
-    return crypto.subtle.verify({ name: "Ed25519" }, key, base64Bytes(sig), new TextEncoder().encode(timestamp + body));
+    return crypto.subtle.verify({ name: "Ed25519" }, key, hexBytes(sig), new TextEncoder().encode(timestamp + body));
   } catch { return false; }
 }
 async function discord(env, path, method = "GET", body) {
