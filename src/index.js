@@ -9,13 +9,30 @@ function hexBytes(hex, expectedLength) {
   return Uint8Array.from(hex.match(/.{2}/g), x => parseInt(x, 16));
 }
 async function verify(request, body, publicKey) {
+  const sig = request.headers.get("x-signature-ed25519");
+  const timestamp = request.headers.get("x-signature-timestamp");
+  const keyText = typeof publicKey === "string" ? publicKey.trim() : "";
+  if (!sig || !timestamp || !keyText) {
+    console.error("Discord signature check: missing header or public key", {
+      hasSignature: !!sig, hasTimestamp: !!timestamp, hasPublicKey: !!keyText
+    });
+    return false;
+  }
   try {
-    const sig = request.headers.get("x-signature-ed25519");
-    const timestamp = request.headers.get("x-signature-timestamp");
-    if (!sig || !timestamp || !publicKey) return false;
-    const key = await crypto.subtle.importKey("raw", hexBytes(publicKey, 64), { name: "Ed25519" }, false, ["verify"]);
-    return crypto.subtle.verify({ name: "Ed25519" }, key, hexBytes(sig, 128), new TextEncoder().encode(timestamp + body));
-  } catch { return false; }
+    if (keyText.length !== 64 || sig.length !== 128) {
+      console.error("Discord signature check: invalid hex lengths", {
+        publicKeyLength: keyText.length, signatureLength: sig.length
+      });
+      return false;
+    }
+    const key = await crypto.subtle.importKey("raw", hexBytes(keyText, 64), { name: "Ed25519" }, false, ["verify"]);
+    const valid = await crypto.subtle.verify({ name: "Ed25519" }, key, hexBytes(sig, 128), new TextEncoder().encode(timestamp + body));
+    if (!valid) console.error("Discord signature check: cryptographic verification returned false");
+    return valid;
+  } catch (error) {
+    console.error("Discord signature check: verification error", error?.name || "Error", error?.message || "unknown");
+    return false;
+  }
 }
 async function discord(env, path, method = "GET", body) {
   const res = await fetch(API + path, {
