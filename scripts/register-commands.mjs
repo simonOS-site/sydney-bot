@@ -17,8 +17,9 @@ const commands = [
   { name: "mute", description: "Timeout a member", options: [member, { type: 4, name: "minutes", description: "Duration in minutes (1 to 40320)", required: false, min_value: 1, max_value: 40320 }, reason] },
   { name: "warn", description: "Privately warn a member by DM", options: [member, reason] }
 ];
+const securedCommands = commands.map(command => ({ ...command, default_member_permissions: "8" }));
 const response = await fetch(API + "/applications/" + appId + "/commands", {
-  method: "PUT", headers: { Authorization: "Bot " + token, "Content-Type": "application/json" }, body: JSON.stringify(commands)
+  method: "PUT", headers: { Authorization: "Bot " + token, "Content-Type": "application/json" }, body: JSON.stringify(securedCommands)
 });
 const data = await response.json();
 if (!response.ok) { console.error(data); process.exit(1); }
