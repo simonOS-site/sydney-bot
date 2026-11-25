@@ -8,7 +8,7 @@ if (!token || !appId) {
 const member = { type: 6, name: "member", description: "Server member", required: true };
 const reason = { type: 3, name: "reason", description: "Reason for this action", required: false, max_length: 400 };
 const commands = [
-  { name: "promote", description: "Create a professional promotion announcement", options: [{ type: 7, name: "channel", description: "Where to post the announcement", required: true, channel_types: [0, 5] }] },
+  { name: "promote", description: "Create a professional promotion announcement" },
   { name: "user", description: "Change a member's server nickname or callsign", options: [member, { type: 3, name: "nickname", description: "New server nickname", required: true, max_length: 32 }] },
   { name: "startup", description: "Start a session start-up vote", options: [{ type: 4, name: "target", description: "Votes required", required: true, min_value: 1, max_value: 1000 }] },
   { name: "shutdown", description: "Post a session shutdown announcement", options: [{ type: 3, name: "message", description: "Optional shutdown message", required: false, max_length: 1500 }] },
