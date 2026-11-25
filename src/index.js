@@ -114,7 +114,7 @@ async function command(interaction, env) {
     if (name === "warn") {
       const dm = await discord(env, "/users/@me/channels", "POST", { recipient_id: id });
       await discord(env, "/channels/" + dm.id + "/messages", "POST", {
-        embeds: [{ title: "Staff warning", description: "You have received a warning in Sydney Roleplay.\n\n**Reason:** " + reason + "\n\nPlease review the server rules.", color: 0xd69e2e, ...(env.BRAND_LOGO_URL ? { thumbnail: { url: env.BRAND_LOGO_URL } } : {}) }],
+        embeds: [{ title: "Staff warning", description: "You have received a warning in Sydney Roleplay.\n\n**Reason:** " + reason + "\n\nPlease review the server rules.", color: 0xd69e2e, ...(cfg.brandLogoUrl ? { thumbnail: { url: cfg.brandLogoUrl } } : {}) }],
         allowed_mentions: { parse: [] }
       });
       return ephemeral("Warning DM sent to <@" + id + ">.");
@@ -136,7 +136,7 @@ async function command(interaction, env) {
 }
 
 async function modal(interaction, env) {
-  if (interaction.data.custom_id !== "promotion_modal") return ephemeral("Unknown form.");
+  if (!interaction.data.custom_id.startsWith("promotion_modal:")) return ephemeral("Unknown form.");
   const guild = interaction.guild_id, cfg = guildConfig(guild, env);
   if (!cfg) return ephemeral("Sydney Bot is not enabled in this server.");
   if (!isAdministrator(interaction)) return ephemeral("Only server administrators can publish promotions.");
