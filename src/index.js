@@ -28,22 +28,25 @@ async function discord(env, path, method = "GET", body) {
   if (!res.ok) throw new Error(data?.message || "Discord API error " + res.status);
   return data;
 }
-function brand(title, description, env, color = 0x17365d) {
+function brand(title, description, env, cfg = {}, color = 0x17365d) {
   return {
     title, description, color, timestamp: new Date().toISOString(), footer: { text: "Sydney Roleplay" },
-    ...(env.BRAND_LOGO_URL ? { thumbnail: { url: env.BRAND_LOGO_URL } } : {}),
-    ...(env.BRAND_BANNER_URL ? { image: { url: env.BRAND_BANNER_URL } } : {})
+    ...(cfg.brandLogoUrl ? { thumbnail: { url: cfg.brandLogoUrl } } : {}),
+    ...(cfg.brandBannerUrl ? { image: { url: cfg.brandBannerUrl } } : {})
   };
 }
 function opts(interaction) {
   return Object.fromEntries((interaction.data?.options || []).map(o => [o.name, o]));
 }
-function staffAllowed(interaction, env) {
-  const perms = BigInt(interaction.member?.permissions || "0");
-  if ((perms & 8n) === 8n) return true;
-  const roles = interaction.member?.roles || [];
-  const allowed = (env.STAFF_ROLE_IDS || "").split(",").map(x => x.trim()).filter(Boolean);
-  return allowed.length > 0 && roles.some(role => allowed.includes(role));
+function isAdministrator(interaction) {
+  const permissions = BigInt(interaction.member?.permissions || "0");
+  return (permissions & 8n) === 8n;
+}
+function guildConfig(guildId, env) {
+  try {
+    const configs = JSON.parse(env.GUILD_CONFIG_JSON || "{}");
+    return configs[guildId] || null;
+  } catch { return null; }
 }
 async function post(env, channel, payload) {
   if (!channel) throw new Error("Destination channel is not configured");
@@ -58,14 +61,20 @@ function modalFields(interaction) {
 async function command(interaction, env) {
   const name = interaction.data.name, o = opts(interaction), guild = interaction.guild_id;
   if (!guild) return ephemeral("Use this command inside the server.");
-  if (!staffAllowed(interaction, env)) return ephemeral("You don't have permission to use this command.");
+  const cfg = guildConfig(guild, env);
+  if (!cfg) return ephemeral("Sydney Bot is not enabled in this server.");
+  if (!isAdministrator(interaction)) return ephemeral("Only server administrators can use Sydney Bot commands.");
 
-  if (name === "promote") return {
-    type: 9, data: { custom_id: "promotion_modal", title: "Promotion announcement", components: [
+  if (name === "promote") {
+    const channel = o.channel?.value;
+    if (!channel) return ephemeral("Choose a destination channel.");
+    return {
+    type: 9, data: { custom_id: "promotion_modal:" + channel, title: "Promotion announcement", components: [
       { type: 1, components: [{ type: 4, custom_id: "heading", label: "Announcement heading", style: 1, min_length: 3, max_length: 100, required: true, placeholder: "Promotion announcement" }] },
       { type: 1, components: [{ type: 4, custom_id: "message", label: "Announcement text", style: 2, min_length: 5, max_length: 4000, required: true, placeholder: "Write the announcement..." }] }
     ]}
   };
+  }
 
   if (name === "user") {
     const id = o.member?.value, nick = String(o.nickname?.value || "").trim();
@@ -78,9 +87,9 @@ async function command(interaction, env) {
     const target = Number(o.target?.value);
     if (!Number.isInteger(target) || target < 1 || target > 1000) return ephemeral("Vote target must be between 1 and 1000.");
     if (!env.SESSIONS) return ephemeral("Session voting storage is not configured.");
-    const sessionId = crypto.randomUUID(), channel = env.SESSION_CHANNEL_ID || interaction.channel_id;
+    const sessionId = crypto.randomUUID(), channel = cfg.sessionChannelId || interaction.channel_id;
     const message = await post(env, channel, {
-      embeds: [brand("SESSION START-UP VOTE", "A session is being proposed for Sydney Roleplay.\n\n**Votes:** 0 / " + target + "\n**Target:** " + target + "\n\nVote below if you can attend.", env)],
+      embeds: [brand("SESSION START-UP VOTE", "A session is being proposed for Sydney Roleplay.\n\n**Votes:** 0 / " + target + "\n**Target:** " + target + "\n\nVote below if you can attend.", env, cfg)],
       components: [{ type: 1, components: [{ type: 2, style: 3, label: "Vote to start", custom_id: "startup_vote:" + sessionId }] }],
       allowed_mentions: { parse: [] }
     });
@@ -95,7 +104,7 @@ async function command(interaction, env) {
 
   if (name === "shutdown") {
     const text = String(o.message?.value || "The current Sydney Roleplay session has concluded. Thank you to everyone who attended.");
-    await post(env, env.ANNOUNCEMENTS_CHANNEL_ID || interaction.channel_id, { embeds: [brand("SESSION SHUTDOWN", text, env)], allowed_mentions: { parse: [] } });
+    await post(env, cfg.announcementsChannelId || interaction.channel_id, { embeds: [brand("SESSION SHUTDOWN", text, env, cfg)], allowed_mentions: { parse: [] } });
     return ephemeral("Shutdown announcement posted.");
   }
 
@@ -128,10 +137,14 @@ async function command(interaction, env) {
 
 async function modal(interaction, env) {
   if (interaction.data.custom_id !== "promotion_modal") return ephemeral("Unknown form.");
-  if (!staffAllowed(interaction, env)) return ephemeral("You don't have permission to publish promotions.");
+  const guild = interaction.guild_id, cfg = guildConfig(guild, env);
+  if (!cfg) return ephemeral("Sydney Bot is not enabled in this server.");
+  if (!isAdministrator(interaction)) return ephemeral("Only server administrators can publish promotions.");
+  const channel = String(interaction.data.custom_id.split(":")[1] || "");
+  if (!/^\d{17,20}$/.test(channel)) return ephemeral("The destination channel is invalid.");
   const f = modalFields(interaction), heading = (f.heading || "Promotion announcement").trim(), message = (f.message || "").trim();
   if (!message) return ephemeral("Announcement text cannot be empty.");
-  await post(env, env.PROMOTIONS_CHANNEL_ID || interaction.channel_id, { embeds: [brand(heading, message, env)], allowed_mentions: { parse: [] } });
+  await post(env, channel, { embeds: [brand(heading, message, env, cfg)], allowed_mentions: { parse: [] } });
   return ephemeral("Promotion announcement published.");
 }
 
@@ -157,10 +170,11 @@ async function joinRelay(request, env) {
   for (let i = 0; i < digestA.length; i++) difference |= digestA[i] ^ digestB[i];
   if (difference !== 0) return reply({ error: "Unauthorized" }, 401);
   const p = await request.json();
-  if (p.guild_id !== env.GUILD_ID || !p.user_id) return reply({ error: "Invalid join event." }, 400);
+  const cfg = guildConfig(p.guild_id, env);
+  if (!cfg || !p.user_id) return reply({ error: "Invalid join event." }, 400);
   const count = Number.isInteger(p.member_count) ? "\n\nYou're member **#" + p.member_count + "**." : "";
-  await post(env, env.GENERAL_CHANNEL_ID, {
-    embeds: [brand("WELCOME TO SYDNEY ROLEPLAY", "Welcome <@" + p.user_id + ">! We're glad you're here." + count + "\n\nPlease read the server information and rules before joining a session.", env)],
+  await post(env, cfg.generalChannelId, {
+    embeds: [brand("WELCOME TO SYDNEY ROLEPLAY", "Welcome <@" + p.user_id + ">! We're glad you're here." + count + "\n\nPlease read the server information and rules before joining a session.", env, cfg)],
     allowed_mentions: { users: [String(p.user_id)] }
   });
   return reply({ ok: true });
@@ -178,6 +192,7 @@ export class SessionCoordinator {
     }
     if (url.pathname !== "/vote") return reply({ error: "Not found" }, 404);
     const s = await this.ctx.storage.get("session");
+    const cfg = s ? guildConfig(s.guild, this.env) || {} : {};
     if (!s) return reply({ error: "This vote is no longer active." }, 404);
     if (s.completed) return reply({ message: "This session is already active." });
     if (!p.userId) return reply({ error: "Could not identify your account." }, 400);
@@ -191,8 +206,8 @@ export class SessionCoordinator {
       title: reached ? "SESSION ACTIVE" : "SESSION START-UP VOTE",
       description: reached ? "The vote target has been reached: **" + count + " / " + s.target + "**.\n\n**Join up Sydney! Session is active!**" : "A session is being proposed for Sydney Roleplay.\n\n**Votes:** " + count + " / " + s.target + "\n**Target:** " + s.target + "\n\nVote below if you can attend.",
       color: reached ? 0x2e8b57 : 0x17365d, timestamp: new Date().toISOString(), footer: { text: "Sydney Roleplay" },
-      ...(this.env.BRAND_LOGO_URL ? { thumbnail: { url: this.env.BRAND_LOGO_URL } } : {}),
-      ...(this.env.BRAND_BANNER_URL ? { image: { url: this.env.BRAND_BANNER_URL } } : {})
+      ...(cfg.brandLogoUrl ? { thumbnail: { url: cfg.brandLogoUrl } } : {}),
+      ...(cfg.brandBannerUrl ? { image: { url: cfg.brandBannerUrl } } : {})
     };
     const edit = await fetch(API + "/channels/" + s.channel + "/messages/" + s.messageId, {
       method: "PATCH", headers, body: JSON.stringify({
@@ -204,7 +219,7 @@ export class SessionCoordinator {
     if (!edit.ok) console.error("Vote message update failed:", edit.status);
     if (reached) {
       const announcement = await fetch(API + "/channels/" + s.channel + "/messages", {
-        method: "POST", headers, body: JSON.stringify({ embeds: [brand("SESSION ACTIVE", "**Join up Sydney! Session is active!**", this.env, 0x2e8b57)], allowed_mentions: { parse: [] } })
+        method: "POST", headers, body: JSON.stringify({ embeds: [brand("SESSION ACTIVE", "**Join up Sydney! Session is active!**", this.env, cfg, 0x2e8b57)], allowed_mentions: { parse: [] } })
       });
       if (!announcement.ok) console.error("Session active announcement failed:", announcement.status);
     }
