@@ -65,16 +65,12 @@ async function command(interaction, env) {
   if (!cfg) return ephemeral("Sydney Bot is not enabled in this server.");
   if (!isAdministrator(interaction)) return ephemeral("Only server administrators can use Sydney Bot commands.");
 
-  if (name === "promote") {
-    const channel = o.channel?.value;
-    if (!channel) return ephemeral("Choose a destination channel.");
-    return {
-    type: 9, data: { custom_id: "promotion_modal:" + channel, title: "Promotion announcement", components: [
+  if (name === "promote") return {
+    type: 9, data: { custom_id: "promotion_modal", title: "Promotion announcement", components: [
       { type: 1, components: [{ type: 4, custom_id: "heading", label: "Announcement heading", style: 1, min_length: 3, max_length: 100, required: true, placeholder: "Promotion announcement" }] },
       { type: 1, components: [{ type: 4, custom_id: "message", label: "Announcement text", style: 2, min_length: 5, max_length: 4000, required: true, placeholder: "Write the announcement..." }] }
     ]}
   };
-  }
 
   if (name === "user") {
     const id = o.member?.value, nick = String(o.nickname?.value || "").trim();
@@ -87,7 +83,7 @@ async function command(interaction, env) {
     const target = Number(o.target?.value);
     if (!Number.isInteger(target) || target < 1 || target > 1000) return ephemeral("Vote target must be between 1 and 1000.");
     if (!env.SESSIONS) return ephemeral("Session voting storage is not configured.");
-    const sessionId = crypto.randomUUID(), channel = cfg.sessionChannelId || interaction.channel_id;
+    const sessionId = crypto.randomUUID(), channel = interaction.channel_id;
     const message = await post(env, channel, {
       embeds: [brand("SESSION START-UP VOTE", "A session is being proposed for Sydney Roleplay.\n\n**Votes:** 0 / " + target + "\n**Target:** " + target + "\n\nVote below if you can attend.", env, cfg)],
       components: [{ type: 1, components: [{ type: 2, style: 3, label: "Vote to start", custom_id: "startup_vote:" + sessionId }] }],
@@ -104,7 +100,7 @@ async function command(interaction, env) {
 
   if (name === "shutdown") {
     const text = String(o.message?.value || "The current Sydney Roleplay session has concluded. Thank you to everyone who attended.");
-    await post(env, cfg.announcementsChannelId || interaction.channel_id, { embeds: [brand("SESSION SHUTDOWN", text, env, cfg)], allowed_mentions: { parse: [] } });
+    await post(env, interaction.channel_id, { embeds: [brand("SESSION SHUTDOWN", text, env, cfg)], allowed_mentions: { parse: [] } });
     return ephemeral("Shutdown announcement posted.");
   }
 
@@ -136,12 +132,12 @@ async function command(interaction, env) {
 }
 
 async function modal(interaction, env) {
-  if (!interaction.data.custom_id.startsWith("promotion_modal:")) return ephemeral("Unknown form.");
+  if (interaction.data.custom_id !== "promotion_modal") return ephemeral("Unknown form.");
   const guild = interaction.guild_id, cfg = guildConfig(guild, env);
   if (!cfg) return ephemeral("Sydney Bot is not enabled in this server.");
   if (!isAdministrator(interaction)) return ephemeral("Only server administrators can publish promotions.");
-  const channel = String(interaction.data.custom_id.split(":")[1] || "");
-  if (!/^\d{17,20}$/.test(channel)) return ephemeral("The destination channel is invalid.");
+  const channel = interaction.channel_id;
+  if (!channel) return ephemeral("Could not determine the channel where the command was run.");
   const f = modalFields(interaction), heading = (f.heading || "Promotion announcement").trim(), message = (f.message || "").trim();
   if (!message) return ephemeral("Announcement text cannot be empty.");
   await post(env, channel, { embeds: [brand(heading, message, env, cfg)], allowed_mentions: { parse: [] } });
@@ -172,8 +168,11 @@ async function joinRelay(request, env) {
   const p = await request.json();
   const cfg = guildConfig(p.guild_id, env);
   if (!cfg || !p.user_id) return reply({ error: "Invalid join event." }, 400);
+  const server = await discord(env, "/guilds/" + p.guild_id);
+  const welcomeChannel = server.system_channel_id;
+  if (!welcomeChannel) return reply({ error: "This server has no system channel configured." }, 409);
   const count = Number.isInteger(p.member_count) ? "\n\nYou're member **#" + p.member_count + "**." : "";
-  await post(env, cfg.generalChannelId, {
+  await post(env, welcomeChannel, {
     embeds: [brand("WELCOME TO SYDNEY ROLEPLAY", "Welcome <@" + p.user_id + ">! We're glad you're here." + count + "\n\nPlease read the server information and rules before joining a session.", env, cfg)],
     allowed_mentions: { users: [String(p.user_id)] }
   });
