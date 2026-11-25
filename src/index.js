@@ -152,7 +152,10 @@ async function joinRelay(request, env) {
   if (!env.JOIN_WEBHOOK_SECRET) return reply({ error: "Join relay is not configured." }, 503);
   const encoder = new TextEncoder(), expected = "Bearer " + env.JOIN_WEBHOOK_SECRET, supplied = request.headers.get("authorization") || "";
   const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", encoder.encode(supplied)), crypto.subtle.digest("SHA-256", encoder.encode(expected))]);
-  if (!crypto.subtle.timingSafeEqual(a, b)) return reply({ error: "Unauthorized" }, 401);
+  const digestA = new Uint8Array(a), digestB = new Uint8Array(b);
+  let difference = 0;
+  for (let i = 0; i < digestA.length; i++) difference |= digestA[i] ^ digestB[i];
+  if (difference !== 0) return reply({ error: "Unauthorized" }, 401);
   const p = await request.json();
   if (p.guild_id !== env.GUILD_ID || !p.user_id) return reply({ error: "Invalid join event." }, 400);
   const count = Number.isInteger(p.member_count) ? "\n\nYou're member **#" + p.member_count + "**." : "";
