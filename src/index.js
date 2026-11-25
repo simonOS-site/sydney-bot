@@ -2,8 +2,10 @@ const API = "https://discord.com/api/v10";
 const reply = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
 const ephemeral = content => ({ type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
 
-function hexBytes(hex) {
-  if (!/^[0-9a-f]{128}$/i.test(hex || "")) throw new Error("Invalid public key");
+function hexBytes(hex, expectedLength) {
+  if (typeof hex !== "string" || hex.length !== expectedLength || !/^[0-9a-f]+$/i.test(hex)) {
+    throw new Error("Invalid hexadecimal value");
+  }
   return Uint8Array.from(hex.match(/.{2}/g), x => parseInt(x, 16));
 }
 async function verify(request, body, publicKey) {
@@ -11,8 +13,8 @@ async function verify(request, body, publicKey) {
     const sig = request.headers.get("x-signature-ed25519");
     const timestamp = request.headers.get("x-signature-timestamp");
     if (!sig || !timestamp || !publicKey) return false;
-    const key = await crypto.subtle.importKey("raw", hexBytes(publicKey), { name: "Ed25519" }, false, ["verify"]);
-    return crypto.subtle.verify({ name: "Ed25519" }, key, hexBytes(sig), new TextEncoder().encode(timestamp + body));
+    const key = await crypto.subtle.importKey("raw", hexBytes(publicKey, 64), { name: "Ed25519" }, false, ["verify"]);
+    return crypto.subtle.verify({ name: "Ed25519" }, key, hexBytes(sig, 128), new TextEncoder().encode(timestamp + body));
   } catch { return false; }
 }
 async function discord(env, path, method = "GET", body) {
